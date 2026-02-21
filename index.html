@@ -2,97 +2,99 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Lienzo Alex & Lia 🎨</title>
+    <title>Espacio Alex & Lia</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
-        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a1a; position: fixed; }
-        canvas { display: block; width: 100%; height: 100%; }
-        #ui { position: fixed; top: 10px; left: 10px; color: rgba(255,255,255,0.3); font-family: sans-serif; pointer-events: none; font-size: 12px; }
+        * { touch-action: none !important; -webkit-user-select: none; user-select: none; outline: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #121212; position: fixed; }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+        #ui { position: fixed; top: 15px; left: 15px; color: #444; font-family: system-ui, sans-serif; pointer-events: none; font-size: 11px; letter-spacing: 1px; }
     </style>
 </head>
 <body>
-    <div id="ui">Conectando...</div>
+    <div id="ui">INICIANDO...</div>
     <canvas id="canvas"></canvas>
 
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
         
-        // Cambio de nombres y mensaje más natural
         let miNombre = localStorage.getItem('dibujo_nombre');
         if (!miNombre) {
             miNombre = prompt("¿Eres Alex o Lia?");
             if (miNombre) localStorage.setItem('dibujo_nombre', miNombre);
         }
 
-        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre || 'invitado' });
+        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre || 'Alex' });
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false }); // Optimización de renderizado
 
-        canvas.width = window.innerWidth;
-        canvas.height = window.innerHeight;
+        function resize() {
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight;
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            ctx.lineWidth = 4;
+        }
+        window.addEventListener('resize', resize);
+        resize();
 
         let drawing = false;
         let lastX = 0, lastY = 0;
-
-        // Lógica de colores actualizada
         const miColor = (miNombre && miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
 
+        // Recibir trazos de Lia (o Alex)
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
-                const suColor = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
-                draw(msg.data.px, msg.data.py, msg.data.x, msg.data.y, suColor);
+                const colorEnemigo = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
+                draw(msg.data.x1, msg.data.y1, msg.data.x2, msg.data.y2, colorEnemigo);
             }
         });
 
-        function draw(px, py, x, y, color) {
+        function draw(x1, y1, x2, y2, color) {
             ctx.strokeStyle = color;
-            ctx.lineWidth = 5;
-            ctx.lineCap = 'round';
-            ctx.lineJoin = 'round';
             ctx.beginPath();
-            ctx.moveTo(px, py);
-            ctx.lineTo(x, y);
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
             ctx.stroke();
         }
 
-        function handleStart(e) {
+        function mover(e) {
+            if (!drawing) return;
+            if (e.cancelable) e.preventDefault();
+
+            const t = e.touches ? e.touches[0] : e;
+            const newX = t.clientX;
+            const newY = t.clientY;
+
+            // Dibujo instantáneo local (sin esperar al servidor)
+            draw(lastX, lastY, newX, newY, miColor);
+
+            // Envío optimizado
+            channel.publish('trazo', { x1: lastX, y1: lastY, x2: newX, y2: newY });
+
+            lastX = newX;
+            lastY = newY;
+        }
+
+        function empezar(e) {
             drawing = true;
             const t = e.touches ? e.touches[0] : e;
             lastX = t.clientX;
             lastY = t.clientY;
         }
 
-        function handleMove(e) {
-            if (!drawing) return;
-            if (e.cancelable) e.preventDefault();
-            
-            const t = e.touches ? e.touches[0] : e;
-            const x = t.clientX;
-            const y = t.clientY;
-
-            if (Math.abs(x - lastX) > 1 || Math.abs(y - lastY) > 1) {
-                draw(lastX, lastY, x, y, miColor);
-                channel.publish('trazo', { px: lastX, py: lastY, x: x, y: y });
-                lastX = x;
-                lastY = y;
-            }
-        }
-
-        canvas.addEventListener('mousedown', handleStart);
-        window.addEventListener('mousemove', handleMove);
+        // Eventos unificados
+        canvas.addEventListener('mousedown', empezar);
+        canvas.addEventListener('touchstart', empezar, { passive: false });
+        window.addEventListener('mousemove', mover);
+        window.addEventListener('touchmove', mover, { passive: false });
         window.addEventListener('mouseup', () => drawing = false);
-        canvas.addEventListener('touchstart', handleStart, { passive: false });
-        canvas.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('touchend', () => drawing = false);
 
         ably.connection.on('connected', () => {
-            document.getElementById('ui').innerText = "⚡ " + (miNombre || "Conectado");
+            document.getElementById('ui').innerText = "CONECTADO: " + miNombre.toUpperCase();
         });
     </script>
 </body>
