@@ -5,41 +5,31 @@
     <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
     <meta http-equiv="Pragma" content="no-cache">
     <meta http-equiv="Expires" content="0">
-    
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Lienzo Luis 🎨</title>
+    <title>Lienzo Alex & Lia 🎨</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        /* Bloqueo total de gestos para que no se corte el trazo */
-        * { 
-            touch-action: none !important; 
-            -webkit-user-select: none; 
-            user-select: none; 
-            -webkit-touch-callout: none;
-        }
-        body, html { 
-            margin: 0; padding: 0; width: 100%; height: 100%; 
-            overflow: hidden; background: #1a1a1a; position: fixed; 
-        }
+        * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
+        body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #1a1a1a; position: fixed; }
         canvas { display: block; width: 100%; height: 100%; }
-        #ui { 
-            position: fixed; top: 10px; left: 10px; 
-            color: rgba(255,255,255,0.3); font-family: sans-serif; 
-            pointer-events: none; font-size: 12px;
-        }
+        #ui { position: fixed; top: 10px; left: 10px; color: rgba(255,255,255,0.3); font-family: sans-serif; pointer-events: none; font-size: 12px; }
     </style>
 </head>
 <body>
-    <div id="ui">Cargando...</div>
+    <div id="ui">Conectando...</div>
     <canvas id="canvas"></canvas>
 
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
         
-        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("Tu nombre (Luis / Amiga):");
-        if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
+        // Cambio de nombres y mensaje más natural
+        let miNombre = localStorage.getItem('dibujo_nombre');
+        if (!miNombre) {
+            miNombre = prompt("¿Eres Alex o Lia?");
+            if (miNombre) localStorage.setItem('dibujo_nombre', miNombre);
+        }
 
-        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre });
+        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre || 'invitado' });
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -50,16 +40,17 @@
         let drawing = false;
         let lastX = 0, lastY = 0;
 
-        const miColor = (miNombre.toLowerCase() === 'luis') ? '#ff0066' : '#00ffcc';
+        // Lógica de colores actualizada
+        const miColor = (miNombre && miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
 
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
-                const suColor = (msg.clientId.toLowerCase() === 'luis') ? '#ff0066' : '#00ffcc';
-                draw(msg.data.x, msg.data.y, msg.data.px, msg.data.py, suColor);
+                const suColor = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
+                draw(msg.data.px, msg.data.py, msg.data.x, msg.data.y, suColor);
             }
         });
 
-        function draw(x, y, px, py, color) {
+        function draw(px, py, x, y, color) {
             ctx.strokeStyle = color;
             ctx.lineWidth = 5;
             ctx.lineCap = 'round';
@@ -79,29 +70,30 @@
 
         function handleMove(e) {
             if (!drawing) return;
-            // Bloquea el scroll del sistema para que la línea no se rompa
-            if (e.cancelable) e.preventDefault(); 
+            if (e.cancelable) e.preventDefault();
             
             const t = e.touches ? e.touches[0] : e;
             const x = t.clientX;
             const y = t.clientY;
-            
-            draw(x, y, lastX, lastY, miColor);
-            channel.publish('trazo', { x, y, px: lastX, py: lastY });
-            lastX = x;
-            lastY = y;
+
+            if (Math.abs(x - lastX) > 1 || Math.abs(y - lastY) > 1) {
+                draw(lastX, lastY, x, y, miColor);
+                channel.publish('trazo', { px: lastX, py: lastY, x: x, y: y });
+                lastX = x;
+                lastY = y;
+            }
         }
 
         canvas.addEventListener('mousedown', handleStart);
         window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', () => drawing = false);
-
-        // Configuración especial para celular
         canvas.addEventListener('touchstart', handleStart, { passive: false });
         canvas.addEventListener('touchmove', handleMove, { passive: false });
-        canvas.addEventListener('touchend', () => drawing = false);
+        window.addEventListener('touchend', () => drawing = false);
 
-        ably.connection.on('connected', () => document.getElementById('ui').innerText = "⚡ " + miNombre);
+        ably.connection.on('connected', () => {
+            document.getElementById('ui').innerText = "⚡ " + (miNombre || "Conectado");
+        });
     </script>
 </body>
 </html>
