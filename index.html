@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Nuestro Lienzo Secreto</title>
+    <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
+    <style>
+        body { margin: 0; background: #222; color: white; font-family: sans-serif; overflow: hidden; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; }
+        #status { position: fixed; top: 10px; left: 10px; font-size: 12px; opacity: 0.6; }
+    </style>
+</head>
+<body>
+    <div id="status">Conectando con Rusia...</div>
+    <canvas id="paintCanvas"></canvas>
+
+    <script>
+        // 1. CONEXIÓN (Necesitarás una API Key gratis de Ably.com)
+        const ably = new Ably.Realtime('TU_API_KEY_AQUI');
+        const channel = ably.channels.get('dibujo-secreto');
+        const canvas = document.getElementById('paintCanvas');
+        const ctx = canvas.getContext('2d');
+        const status = document.getElementById('status');
+
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
+
+        let drawing = false;
+
+        // 2. ESCUCHAR LO QUE VIENE DE RUSIA
+        channel.subscribe('draw', (msg) => {
+            if (msg.clientId !== ably.auth.clientId) {
+                drawOnCanvas(msg.data.x, msg.data.y, msg.data.px, msg.data.py, '#00ffcc');
+            }
+        });
+
+        // 3. EVENTOS DE DIBUJO (Touch y Mouse)
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        canvas.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('touchstart', (e) => startDrawing(e.touches[0]));
+        canvas.addEventListener('touchmove', (e) => draw(e.touches[0]));
+
+        let lastX = 0, lastY = 0;
+
+        function startDrawing(e) {
+            drawing = true;
+            [lastX, lastY] = [e.clientX, e.clientY];
+        }
+
+        function draw(e) {
+            if (!drawing) return;
+            const x = e.clientX;
+            const y = e.clientY;
+
+            drawOnCanvas(x, y, lastX, lastY, '#ff0066');
+
+            // Enviar coordenadas por el túnel
+            channel.publish('draw', { x, y, px: lastX, py: lastY });
+            [lastX, lastY] = [x, y];
+        }
+
+        function stopDrawing() { drawing = false; }
+
+        function drawOnCanvas(x, y, px, py, color) {
+            ctx.strokeStyle = color;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.lineWidth = 5;
+            ctx.beginPath();
+            ctx.moveTo(px, py);
+            ctx.lineTo(x, y);
+            ctx.stroke();
+        }
+
+        ably.connection.on('connected', () => status.innerText = "⚡ Conectado");
+    </script>
+</body>
+</html>
