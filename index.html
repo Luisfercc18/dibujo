@@ -8,38 +8,37 @@
     <style>
         * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
         
-        /* FONDO TOTALMENTE NEGRO (OLED) */
         body, html { 
             margin: 0; padding: 0; width: 100%; height: 100%; 
-            overflow: hidden; background: #000000; 
+            overflow: hidden; background: #000000; /* Fondo OLED */
             position: fixed; 
             font-family: 'Courier New', Courier, monospace;
         }
 
         canvas { 
             display: block; 
-            background: #000000; /* Negro puro también en el lienzo */
+            background: #000000; 
             margin: auto; 
             position: absolute;
             top: 0; bottom: 0; left: 0; right: 0;
+            /* BORDE SUTIL PARA VER EL ÁREA EN PC */
+            border: 1px solid rgba(255, 255, 255, 0.08); 
+            box-shadow: 0 0 40px rgba(0,0,0,1);
         }
 
-        /* TEXTO EN BLANCO Y FUENTE CUADRADA */
         #ui { 
             position: fixed; top: 25px; left: 25px; 
-            color: #ffffff; /* Blanco brillante */
+            color: #ffffff; 
             font-size: 14px; 
             font-weight: bold;
             letter-spacing: 2px; 
             pointer-events: none; z-index: 10;
             display: flex; align-items: center; gap: 12px;
-            text-shadow: 0 0 5px rgba(255,255,255,0.3);
         }
 
         #status-dot { 
             width: 10px; height: 10px; 
-            border-radius: 2px; /* Cuadradito */
-            transition: background 0.3s;
+            border-radius: 2px;
         }
     </style>
 </head>
@@ -51,6 +50,7 @@
     <canvas id="canvas"></canvas>
 
     <script>
+        // ... (Todo el resto del código que ya tienes se mantiene igual) ...
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
         let miNombre = localStorage.getItem('dibujo_nombre') || prompt("¿ALEX O LIA?");
         if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
