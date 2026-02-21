@@ -6,52 +6,39 @@
     <title>Espacio Alex & Lia</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        * { 
-            touch-action: none !important; 
-            -webkit-user-select: none; 
-            user-select: none; 
-        }
+        * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
         body, html { 
             margin: 0; padding: 0; width: 100%; height: 100%; 
-            overflow: hidden; background: #0b0b0b; 
+            overflow: hidden; background: #050505; /* Fondo fuera del área */
             position: fixed; 
-            /* FUENTE CUADRADA / MONOSPACE */
             font-family: 'Courier New', Courier, monospace;
         }
-        canvas { display: block; width: 100%; height: 100%; }
-        
+        canvas { 
+            display: block; 
+            background: #0b0b0b; /* Fondo del área de dibujo */
+            margin: auto; 
+            position: absolute;
+            top: 0; bottom: 0; left: 0; right: 0;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
         #ui { 
-            position: fixed; 
-            top: 25px; 
-            left: 25px; 
-            color: rgba(255,255,255,0.25); 
-            font-size: 13px; /* Un pelín más grande para que se note la fuente */
-            font-weight: bold;
-            letter-spacing: 1px;
-            pointer-events: none;
-            display: flex;
-            align-items: center;
-            gap: 10px;
+            position: fixed; top: 25px; left: 25px; 
+            color: rgba(255,255,255,0.25); font-size: 13px; font-weight: bold;
+            letter-spacing: 1px; pointer-events: none; z-index: 10;
+            display: flex; align-items: center; gap: 10px;
         }
-        #status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 2px; /* Cuadradito también */
-            background: #ff0066;
-            box-shadow: 0 0 12px rgba(255,0,102,0.6);
-        }
+        #status-dot { width: 8px; height: 8px; border-radius: 2px; }
     </style>
 </head>
 <body>
     <div id="ui">
         <div id="status-dot"></div>
-        <span id="status-text">CONNECTING...</span>
+        <span id="status-text">SYNCING...</span>
     </div>
     <canvas id="canvas"></canvas>
 
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
-        
         let miNombre = localStorage.getItem('dibujo_nombre') || prompt("¿ALEX O LIA?");
         if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
 
@@ -60,29 +47,33 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d', { desynchronized: true });
 
-        let drawing = false;
-        let lastX = 0, lastY = 0;
-        let bufferTrazos = [];
-        
-        const colorAlex = '#ff0066';
-        const colorLia = '#00ffcc';
-        const miColor = (miNombre && miNombre.toLowerCase() === 'alex') ? colorAlex : colorLia;
+        // PROPORCIÓN FIJA (9:16 - Estilo celular para que a Lia le quede perfecto)
+        const ASPECT_RATIO = 9 / 16; 
 
         function resize() {
-            canvas.width = window.innerWidth;
-            canvas.height = window.innerHeight;
+            let w = window.innerWidth;
+            let h = window.innerHeight;
+
+            if (w / h > ASPECT_RATIO) {
+                w = h * ASPECT_RATIO;
+            } else {
+                h = w / ASPECT_RATIO;
+            }
+
+            canvas.width = w;
+            canvas.height = h;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = 3.5;
+            ctx.lineWidth = w * 0.008; // Grosor relativo al tamaño
         }
         window.addEventListener('resize', resize);
         resize();
 
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
-                const colorRecibido = (msg.clientId.toLowerCase() === 'alex') ? colorAlex : colorLia;
+                const color = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
                 msg.data.forEach(t => {
-                    draw(t.px * canvas.width, t.py * canvas.height, t.x * canvas.width, t.y * canvas.height, colorRecibido);
+                    draw(t.px * canvas.width, t.py * canvas.height, t.x * canvas.width, t.y * canvas.height, color);
                 });
             }
         });
@@ -95,6 +86,7 @@
             ctx.stroke();
         }
 
+        let bufferTrazos = [];
         setInterval(() => {
             if (bufferTrazos.length > 0) {
                 channel.publish('trazo', bufferTrazos);
@@ -105,9 +97,11 @@
         function mover(e) {
             if (!drawing) return;
             if (e.cancelable) e.preventDefault();
+            const rect = canvas.getBoundingClientRect();
             const t = e.touches ? e.touches[0] : e;
-            const x = t.clientX;
-            const y = t.clientY;
+            
+            const x = t.clientX - rect.left;
+            const y = t.clientY - rect.top;
 
             draw(lastX, lastY, x, y, miColor);
             bufferTrazos.push({ 
@@ -119,10 +113,12 @@
 
         function empezar(e) {
             drawing = true;
+            const rect = canvas.getBoundingClientRect();
             const t = e.touches ? e.touches[0] : e;
-            [lastX, lastY] = [t.clientX, t.clientY];
+            [lastX, lastY] = [t.clientX - rect.left, t.clientY - rect.top];
         }
 
+        const miColor = (miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
         canvas.addEventListener('mousedown', empezar);
         canvas.addEventListener('touchstart', empezar, { passive: false });
         window.addEventListener('mousemove', mover);
@@ -133,7 +129,6 @@
         ably.connection.on('connected', () => {
             document.getElementById('status-text').innerText = miNombre.toUpperCase();
             document.getElementById('status-dot').style.background = miColor;
-            document.getElementById('status-dot').style.boxShadow = `0 0 12px ${miColor}`;
         });
     </script>
 </body>
