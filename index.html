@@ -16,9 +16,14 @@
     <canvas id="canvas"></canvas>
 
     <script>
-        // REEMPLAZA ESTO CON TU API KEY DE ABLY
+        // USA TU API KEY QUE YA TIENES
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk'; 
         
+        // AQUÍ ESTÁ EL TRUCO: Diferenciamos por dispositivo
+        const esCelular = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+        const miColor = esCelular ? '#00ffcc' : '#ff0066'; // Celular Verde, PC Rosa
+        const suColor = esCelular ? '#ff0066' : '#00ffcc';
+
         const ably = new Ably.Realtime(API_KEY);
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
@@ -31,11 +36,7 @@
         let drawing = false;
         let lastX = 0, lastY = 0;
 
-        // Color para TI (Rosa) y para ELLA (Verde)
-        const miColor = '#ff0066'; 
-        const suColor = '#00ffcc';
-
-        // Escuchar lo que llega de Rusia
+        // Escuchar lo que llega
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== ably.auth.clientId) {
                 dibujar(msg.data.x, msg.data.y, msg.data.px, msg.data.py, suColor);
@@ -44,8 +45,9 @@
 
         function dibujar(x, y, px, py, color) {
             ctx.strokeStyle = color;
-            ctx.lineWidth = 3;
+            ctx.lineWidth = 4; // Un poquito más grueso para que se vea mejor
             ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
             ctx.beginPath();
             ctx.moveTo(px, py);
             ctx.lineTo(x, y);
@@ -54,18 +56,20 @@
 
         function mouseMove(e) {
             if (!drawing) return;
-            const x = e.clientX || e.touches[0].clientX;
-            const y = e.clientY || e.touches[0].clientY;
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
             
-            dibujar(x, y, lastX, lastY, miColor);
-            channel.publish('trazo', { x, y, px: lastX, py: lastY });
-            [lastX, lastY] = [x, y];
+            if (x && y) {
+                dibujar(x, y, lastX, lastY, miColor);
+                channel.publish('trazo', { x, y, px: lastX, py: lastY });
+                [lastX, lastY] = [x, y];
+            }
         }
 
         canvas.addEventListener('mousedown', (e) => { drawing = true; [lastX, lastY] = [e.clientX, e.clientY]; });
         canvas.addEventListener('touchstart', (e) => { drawing = true; [lastX, lastY] = [e.touches[0].clientX, e.touches[0].clientY]; });
         window.addEventListener('mousemove', mouseMove);
-        window.addEventListener('touchmove', mouseMove);
+        window.addEventListener('touchmove', mouseMove, { passive: false });
         window.addEventListener('mouseup', () => drawing = false);
         window.addEventListener('touchend', () => drawing = false);
 
