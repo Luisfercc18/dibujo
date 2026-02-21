@@ -18,17 +18,17 @@
 
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
-        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("¿Alex o Lia?");
+        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("¿Eres Alex o Lia?");
         if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
 
         const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre });
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { desynchronized: true }); // Latencia ultra baja
+        const ctx = canvas.getContext('2d', { desynchronized: true });
 
         let drawing = false;
         let lastX = 0, lastY = 0;
-        let bufferTrazos = []; // Aquí guardaremos los puntos antes de enviarlos
+        let bufferTrazos = [];
         const miColor = (miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
 
         function resize() {
@@ -41,11 +41,17 @@
         window.addEventListener('resize', resize);
         resize();
 
-        // Recibir ráfagas de Lia/Alex
+        // RECIBIR: Convertir porcentajes de vuelta a píxeles locales
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
                 const color = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
-                msg.data.forEach(t => draw(t.x1, t.y1, t.x2, t.y2, color));
+                msg.data.forEach(t => {
+                    draw(
+                        t.px * canvas.width, t.py * canvas.height, 
+                        t.x * canvas.width, t.y * canvas.height, 
+                        color
+                    );
+                });
             }
         });
 
@@ -57,7 +63,6 @@
             ctx.stroke();
         }
 
-        // ENVIAR PAQUETES CADA 50ms (Elimina el lag rítmico)
         setInterval(() => {
             if (bufferTrazos.length > 0) {
                 channel.publish('trazo', bufferTrazos);
@@ -73,7 +78,14 @@
             const y = t.clientY;
 
             draw(lastX, lastY, x, y, miColor);
-            bufferTrazos.push({ x1: lastX, y1: lastY, x2: x, y2: y });
+
+            // ENVIAR: Convertir píxeles a porcentajes (0 a 1)
+            bufferTrazos.push({ 
+                px: lastX / canvas.width, 
+                py: lastY / canvas.height, 
+                x: x / canvas.width, 
+                y: y / canvas.height 
+            });
 
             lastX = x;
             lastY = y;
