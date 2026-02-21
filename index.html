@@ -2,14 +2,31 @@
 <html lang="es">
 <head>
     <meta charset="UTF-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>Lienzo Privado 🎨</title>
+    <title>Lienzo Luis 🎨</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        * { touch-action: none; -webkit-touch-callout: none; -webkit-user-select: none; }
-        body { margin: 0; background: #1a1a1a; overflow: hidden; position: fixed; width: 100vw; height: 100vh; }
-        canvas { display: block; width: 100%; height: 100%; background: transparent; }
-        #ui { position: fixed; top: env(safe-area-inset-top, 10px); left: 10px; color: rgba(255,255,255,0.4); font-family: system-ui; pointer-events: none; font-size: 12px; }
+        /* Bloqueo total de gestos para que no se corte el trazo */
+        * { 
+            touch-action: none !important; 
+            -webkit-user-select: none; 
+            user-select: none; 
+            -webkit-touch-callout: none;
+        }
+        body, html { 
+            margin: 0; padding: 0; width: 100%; height: 100%; 
+            overflow: hidden; background: #1a1a1a; position: fixed; 
+        }
+        canvas { display: block; width: 100%; height: 100%; }
+        #ui { 
+            position: fixed; top: 10px; left: 10px; 
+            color: rgba(255,255,255,0.3); font-family: sans-serif; 
+            pointer-events: none; font-size: 12px;
+        }
     </style>
 </head>
 <body>
@@ -19,7 +36,7 @@
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
         
-        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("Tu nombre (Luis o Amiga):");
+        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("Tu nombre (Luis / Amiga):");
         if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
 
         const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre });
@@ -27,11 +44,8 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
 
-        // Ajuste de resolución para que no se vea borroso
-        const dpr = window.devicePixelRatio || 1;
-        canvas.width = window.innerWidth * dpr;
-        canvas.height = window.innerHeight * dpr;
-        ctx.scale(dpr, dpr);
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight;
 
         let drawing = false;
         let lastX = 0, lastY = 0;
@@ -41,13 +55,13 @@
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
                 const suColor = (msg.clientId.toLowerCase() === 'luis') ? '#ff0066' : '#00ffcc';
-                dibujar(msg.data.x, msg.data.y, msg.data.px, msg.data.py, suColor);
+                draw(msg.data.x, msg.data.y, msg.data.px, msg.data.py, suColor);
             }
         });
 
-        function dibujar(x, y, px, py, color) {
+        function draw(x, y, px, py, color) {
             ctx.strokeStyle = color;
-            ctx.lineWidth = 4;
+            ctx.lineWidth = 5;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.beginPath();
@@ -56,33 +70,36 @@
             ctx.stroke();
         }
 
-        function getCoords(e) {
-            const t = e.touches ? e.touches[0] : e;
-            return { x: t.clientX, y: t.clientY };
-        }
-
-        function start(e) {
+        function handleStart(e) {
             drawing = true;
-            const { x, y } = getCoords(e);
-            [lastX, lastY] = [x, y];
+            const t = e.touches ? e.touches[0] : e;
+            lastX = t.clientX;
+            lastY = t.clientY;
         }
 
-        function move(e) {
+        function handleMove(e) {
             if (!drawing) return;
-            e.preventDefault();
-            const { x, y } = getCoords(e);
+            // Bloquea el scroll del sistema para que la línea no se rompa
+            if (e.cancelable) e.preventDefault(); 
             
-            dibujar(x, y, lastX, lastY, miColor);
+            const t = e.touches ? e.touches[0] : e;
+            const x = t.clientX;
+            const y = t.clientY;
+            
+            draw(x, y, lastX, lastY, miColor);
             channel.publish('trazo', { x, y, px: lastX, py: lastY });
-            [lastX, lastY] = [x, y];
+            lastX = x;
+            lastY = y;
         }
 
-        canvas.addEventListener('mousedown', start);
-        canvas.addEventListener('touchstart', start, { passive: false });
-        window.addEventListener('mousemove', move);
-        window.addEventListener('touchmove', move, { passive: false });
+        canvas.addEventListener('mousedown', handleStart);
+        window.addEventListener('mousemove', handleMove);
         window.addEventListener('mouseup', () => drawing = false);
-        window.addEventListener('touchend', () => drawing = false);
+
+        // Configuración especial para celular
+        canvas.addEventListener('touchstart', handleStart, { passive: false });
+        canvas.addEventListener('touchmove', handleMove, { passive: false });
+        canvas.addEventListener('touchend', () => drawing = false);
 
         ably.connection.on('connected', () => document.getElementById('ui').innerText = "⚡ " + miNombre);
     </script>
