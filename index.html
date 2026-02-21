@@ -6,29 +6,30 @@
     <title>Espacio Alex & Lia</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        * { touch-action: none !important; -webkit-user-select: none; user-select: none; outline: none; }
+        * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
         body, html { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #121212; position: fixed; }
-        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
-        #ui { position: fixed; top: 15px; left: 15px; color: #444; font-family: system-ui, sans-serif; pointer-events: none; font-size: 11px; letter-spacing: 1px; }
+        canvas { display: block; width: 100%; height: 100%; }
+        #ui { position: fixed; top: 15px; left: 15px; color: rgba(255,255,255,0.2); font-family: sans-serif; pointer-events: none; font-size: 10px; }
     </style>
 </head>
 <body>
-    <div id="ui">INICIANDO...</div>
+    <div id="ui">CONECTANDO...</div>
     <canvas id="canvas"></canvas>
 
     <script>
         const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
-        
-        let miNombre = localStorage.getItem('dibujo_nombre');
-        if (!miNombre) {
-            miNombre = prompt("¿Eres Alex o Lia?");
-            if (miNombre) localStorage.setItem('dibujo_nombre', miNombre);
-        }
+        let miNombre = localStorage.getItem('dibujo_nombre') || prompt("¿Alex o Lia?");
+        if(miNombre) localStorage.setItem('dibujo_nombre', miNombre);
 
-        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre || 'Alex' });
+        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre });
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d', { alpha: false }); // Optimización de renderizado
+        const ctx = canvas.getContext('2d', { desynchronized: true }); // Latencia ultra baja
+
+        let drawing = false;
+        let lastX = 0, lastY = 0;
+        let bufferTrazos = []; // Aquí guardaremos los puntos antes de enviarlos
+        const miColor = (miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
 
         function resize() {
             canvas.width = window.innerWidth;
@@ -40,15 +41,11 @@
         window.addEventListener('resize', resize);
         resize();
 
-        let drawing = false;
-        let lastX = 0, lastY = 0;
-        const miColor = (miNombre && miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
-
-        // Recibir trazos de Lia (o Alex)
+        // Recibir ráfagas de Lia/Alex
         channel.subscribe('trazo', (msg) => {
             if (msg.clientId !== miNombre) {
-                const colorEnemigo = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
-                draw(msg.data.x1, msg.data.y1, msg.data.x2, msg.data.y2, colorEnemigo);
+                const color = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
+                msg.data.forEach(t => draw(t.x1, t.y1, t.x2, t.y2, color));
             }
         });
 
@@ -60,22 +57,26 @@
             ctx.stroke();
         }
 
+        // ENVIAR PAQUETES CADA 50ms (Elimina el lag rítmico)
+        setInterval(() => {
+            if (bufferTrazos.length > 0) {
+                channel.publish('trazo', bufferTrazos);
+                bufferTrazos = [];
+            }
+        }, 50);
+
         function mover(e) {
             if (!drawing) return;
             if (e.cancelable) e.preventDefault();
-
             const t = e.touches ? e.touches[0] : e;
-            const newX = t.clientX;
-            const newY = t.clientY;
+            const x = t.clientX;
+            const y = t.clientY;
 
-            // Dibujo instantáneo local (sin esperar al servidor)
-            draw(lastX, lastY, newX, newY, miColor);
+            draw(lastX, lastY, x, y, miColor);
+            bufferTrazos.push({ x1: lastX, y1: lastY, x2: x, y2: y });
 
-            // Envío optimizado
-            channel.publish('trazo', { x1: lastX, y1: lastY, x2: newX, y2: newY });
-
-            lastX = newX;
-            lastY = newY;
+            lastX = x;
+            lastY = y;
         }
 
         function empezar(e) {
@@ -85,7 +86,6 @@
             lastY = t.clientY;
         }
 
-        // Eventos unificados
         canvas.addEventListener('mousedown', empezar);
         canvas.addEventListener('touchstart', empezar, { passive: false });
         window.addEventListener('mousemove', mover);
@@ -93,9 +93,7 @@
         window.addEventListener('mouseup', () => drawing = false);
         window.addEventListener('touchend', () => drawing = false);
 
-        ably.connection.on('connected', () => {
-            document.getElementById('ui').innerText = "CONECTADO: " + miNombre.toUpperCase();
-        });
+        ably.connection.on('connected', () => document.getElementById('ui').innerText = "⚡ " + miNombre.toUpperCase());
     </script>
 </body>
 </html>
