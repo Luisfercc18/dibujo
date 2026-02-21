@@ -3,28 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Nuestro Espacio 🎨</title>
+    <title>Pizarra Privada 🎨</title>
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
-        body { margin: 0; background: #1a1a1a; overflow: hidden; touch-action: none; font-family: sans-serif; }
-        canvas { display: block; width: 100vw; height: 100vh; cursor: crosshair; }
-        #ui { position: fixed; top: 10px; left: 10px; color: rgba(255,255,255,0.5); pointer-events: none; }
+        body { margin: 0; background: #1a1a1a; overflow: hidden; position: fixed; width: 100%; height: 100%; touch-action: none; }
+        canvas { display: block; width: 100vw; height: 100vh; touch-action: none; }
+        #ui { position: fixed; top: 10px; left: 10px; color: rgba(255,255,255,0.7); font-family: sans-serif; pointer-events: none; z-index: 10; }
     </style>
 </head>
 <body>
-    <div id="ui">Conectando...</div>
+    <div id="ui">Cargando...</div>
     <canvas id="canvas"></canvas>
 
     <script>
-        // USA TU API KEY QUE YA TIENES
-        const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk'; 
+        const API_KEY = '7B90kg.w4Ggew:jqrsjcLD2iXsUmHZDEXKLEmCiZ3_gu4auqYwJHBW6kk';
         
-        // AQUÍ ESTÁ EL TRUCO: Diferenciamos por dispositivo
-        const esCelular = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-        const miColor = esCelular ? '#00ffcc' : '#ff0066'; // Celular Verde, PC Rosa
-        const suColor = esCelular ? '#ff0066' : '#00ffcc';
+        // 1. Identificación para que no se mezclen los colores
+        let miNombre = localStorage.getItem('dibujo_nombre');
+        if (!miNombre) {
+            miNombre = prompt("¿Cómo te llamas? (Esto define tu color)");
+            localStorage.setItem('dibujo_nombre', miNombre);
+        }
 
-        const ably = new Ably.Realtime(API_KEY);
+        const ably = new Ably.Realtime({ key: API_KEY, clientId: miNombre });
         const channel = ably.channels.get('pizarra-secreta');
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d');
@@ -36,16 +37,24 @@
         let drawing = false;
         let lastX = 0, lastY = 0;
 
-        // Escuchar lo que llega
+        // 2. Definición de colores fijos por nombre
+        const getColor = (name) => {
+            return (name === 'Luis' || name === 'luis') ? '#ff0066' : '#00ffcc';
+        };
+
+        const miColor = getColor(miNombre);
+
+        // Escuchar trazos de otros
         channel.subscribe('trazo', (msg) => {
-            if (msg.clientId !== ably.auth.clientId) {
+            if (msg.clientId !== miNombre) {
+                const suColor = getColor(msg.clientId);
                 dibujar(msg.data.x, msg.data.y, msg.data.px, msg.data.py, suColor);
             }
         });
 
         function dibujar(x, y, px, py, color) {
             ctx.strokeStyle = color;
-            ctx.lineWidth = 4; // Un poquito más grueso para que se vea mejor
+            ctx.lineWidth = 5;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
             ctx.beginPath();
@@ -54,26 +63,33 @@
             ctx.stroke();
         }
 
-        function mouseMove(e) {
+        function handleMove(e) {
             if (!drawing) return;
+            e.preventDefault(); // EVITA QUE LA PÁGINA SE MUEVA Y EL TRAZO SE CORTE
+            
             const x = e.clientX || (e.touches && e.touches[0].clientX);
             const y = e.clientY || (e.touches && e.touches[0].clientY);
             
-            if (x && y) {
-                dibujar(x, y, lastX, lastY, miColor);
-                channel.publish('trazo', { x, y, px: lastX, py: lastY });
-                [lastX, lastY] = [x, y];
-            }
+            dibujar(x, y, lastX, lastY, miColor);
+            channel.publish('trazo', { x, y, px: lastX, py: lastY });
+            [lastX, lastY] = [x, y];
         }
 
-        canvas.addEventListener('mousedown', (e) => { drawing = true; [lastX, lastY] = [e.clientX, e.clientY]; });
-        canvas.addEventListener('touchstart', (e) => { drawing = true; [lastX, lastY] = [e.touches[0].clientX, e.touches[0].clientY]; });
-        window.addEventListener('mousemove', mouseMove);
-        window.addEventListener('touchmove', mouseMove, { passive: false });
+        function start(e) {
+            drawing = true;
+            const x = e.clientX || (e.touches && e.touches[0].clientX);
+            const y = e.clientY || (e.touches && e.touches[0].clientY);
+            [lastX, lastY] = [x, y];
+        }
+
+        canvas.addEventListener('mousedown', start);
+        canvas.addEventListener('touchstart', start, { passive: false });
+        window.addEventListener('mousemove', handleMove);
+        window.addEventListener('touchmove', handleMove, { passive: false });
         window.addEventListener('mouseup', () => drawing = false);
         window.addEventListener('touchend', () => drawing = false);
 
-        ably.connection.on('connected', () => ui.innerText = "⚡ Conectado con el servidor");
+        ably.connection.on('connected', () => ui.innerText = "⚡ Conectado como: " + miNombre);
     </script>
 </body>
 </html>
