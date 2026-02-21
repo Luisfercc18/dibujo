@@ -7,33 +7,46 @@
     <script src="https://cdn.ably.com/lib/ably.min-1.js"></script>
     <style>
         * { touch-action: none !important; -webkit-user-select: none; user-select: none; }
+        
+        /* FONDO TOTALMENTE NEGRO (OLED) */
         body, html { 
             margin: 0; padding: 0; width: 100%; height: 100%; 
-            overflow: hidden; background: #050505; /* Fondo fuera del área */
+            overflow: hidden; background: #000000; 
             position: fixed; 
             font-family: 'Courier New', Courier, monospace;
         }
+
         canvas { 
             display: block; 
-            background: #0b0b0b; /* Fondo del área de dibujo */
+            background: #000000; /* Negro puro también en el lienzo */
             margin: auto; 
             position: absolute;
             top: 0; bottom: 0; left: 0; right: 0;
-            box-shadow: 0 0 20px rgba(0,0,0,0.5);
         }
+
+        /* TEXTO EN BLANCO Y FUENTE CUADRADA */
         #ui { 
             position: fixed; top: 25px; left: 25px; 
-            color: rgba(255,255,255,0.25); font-size: 13px; font-weight: bold;
-            letter-spacing: 1px; pointer-events: none; z-index: 10;
-            display: flex; align-items: center; gap: 10px;
+            color: #ffffff; /* Blanco brillante */
+            font-size: 14px; 
+            font-weight: bold;
+            letter-spacing: 2px; 
+            pointer-events: none; z-index: 10;
+            display: flex; align-items: center; gap: 12px;
+            text-shadow: 0 0 5px rgba(255,255,255,0.3);
         }
-        #status-dot { width: 8px; height: 8px; border-radius: 2px; }
+
+        #status-dot { 
+            width: 10px; height: 10px; 
+            border-radius: 2px; /* Cuadradito */
+            transition: background 0.3s;
+        }
     </style>
 </head>
 <body>
     <div id="ui">
-        <div id="status-dot"></div>
-        <span id="status-text">SYNCING...</span>
+        <div id="status-dot" style="background: #333;"></div>
+        <span id="status-text">CONNECTING...</span>
     </div>
     <canvas id="canvas"></canvas>
 
@@ -47,24 +60,21 @@
         const canvas = document.getElementById('canvas');
         const ctx = canvas.getContext('2d', { desynchronized: true });
 
-        // PROPORCIÓN FIJA (9:16 - Estilo celular para que a Lia le quede perfecto)
         const ASPECT_RATIO = 9 / 16; 
+        let drawing = false;
+        let moved = false;
+        let lastX = 0, lastY = 0;
+        let bufferTrazos = [];
 
         function resize() {
             let w = window.innerWidth;
             let h = window.innerHeight;
-
-            if (w / h > ASPECT_RATIO) {
-                w = h * ASPECT_RATIO;
-            } else {
-                h = w / ASPECT_RATIO;
-            }
-
+            if (w / h > ASPECT_RATIO) { w = h * ASPECT_RATIO; } else { h = w / ASPECT_RATIO; }
             canvas.width = w;
             canvas.height = h;
             ctx.lineCap = 'round';
             ctx.lineJoin = 'round';
-            ctx.lineWidth = w * 0.008; // Grosor relativo al tamaño
+            ctx.lineWidth = w * 0.01; 
         }
         window.addEventListener('resize', resize);
         resize();
@@ -73,12 +83,16 @@
             if (msg.clientId !== miNombre) {
                 const color = (msg.clientId.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
                 msg.data.forEach(t => {
-                    draw(t.px * canvas.width, t.py * canvas.height, t.x * canvas.width, t.y * canvas.height, color);
+                    if(t.isPoint) {
+                        drawPoint(t.x * canvas.width, t.y * canvas.height, color);
+                    } else {
+                        drawLine(t.px * canvas.width, t.py * canvas.height, t.x * canvas.width, t.y * canvas.height, color);
+                    }
                 });
             }
         });
 
-        function draw(x1, y1, x2, y2, color) {
+        function drawLine(x1, y1, x2, y2, color) {
             ctx.strokeStyle = color;
             ctx.beginPath();
             ctx.moveTo(x1, y1);
@@ -86,7 +100,13 @@
             ctx.stroke();
         }
 
-        let bufferTrazos = [];
+        function drawPoint(x, y, color) {
+            ctx.fillStyle = color;
+            ctx.beginPath();
+            ctx.arc(x, y, ctx.lineWidth / 1.5, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
         setInterval(() => {
             if (bufferTrazos.length > 0) {
                 channel.publish('trazo', bufferTrazos);
@@ -99,23 +119,32 @@
             if (e.cancelable) e.preventDefault();
             const rect = canvas.getBoundingClientRect();
             const t = e.touches ? e.touches[0] : e;
-            
             const x = t.clientX - rect.left;
             const y = t.clientY - rect.top;
 
-            draw(lastX, lastY, x, y, miColor);
-            bufferTrazos.push({ 
-                px: lastX / canvas.width, py: lastY / canvas.height, 
-                x: x / canvas.width, y: y / canvas.height 
-            });
-            [lastX, lastY] = [x, y];
+            if (Math.abs(x - lastX) > 1 || Math.abs(y - lastY) > 1) {
+                moved = true;
+                drawLine(lastX, lastY, x, y, miColor);
+                bufferTrazos.push({ px: lastX / canvas.width, py: lastY / canvas.height, x: x / canvas.width, y: y / canvas.height, isPoint: false });
+                [lastX, lastY] = [x, y];
+            }
         }
 
         function empezar(e) {
             drawing = true;
+            moved = false;
             const rect = canvas.getBoundingClientRect();
             const t = e.touches ? e.touches[0] : e;
             [lastX, lastY] = [t.clientX - rect.left, t.clientY - rect.top];
+        }
+
+        function terminar(e) {
+            if (!drawing) return;
+            if (!moved) {
+                drawPoint(lastX, lastY, miColor);
+                bufferTrazos.push({ x: lastX / canvas.width, y: lastY / canvas.height, isPoint: true });
+            }
+            drawing = false;
         }
 
         const miColor = (miNombre.toLowerCase() === 'alex') ? '#ff0066' : '#00ffcc';
@@ -123,12 +152,13 @@
         canvas.addEventListener('touchstart', empezar, { passive: false });
         window.addEventListener('mousemove', mover);
         window.addEventListener('touchmove', mover, { passive: false });
-        window.addEventListener('mouseup', () => drawing = false);
-        window.addEventListener('touchend', () => drawing = false);
+        window.addEventListener('mouseup', terminar);
+        window.addEventListener('touchend', terminar);
 
         ably.connection.on('connected', () => {
             document.getElementById('status-text').innerText = miNombre.toUpperCase();
             document.getElementById('status-dot').style.background = miColor;
+            document.getElementById('status-dot').style.boxShadow = `0 0 10px ${miColor}`;
         });
     </script>
 </body>
